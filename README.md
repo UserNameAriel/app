@@ -1,0 +1,225 @@
+# Config App — Full Stack Project
+
+A dynamic config-driven web application.  
+The backend serves JSON schemas from MongoDB, the frontend renders them as HTML blocks inside iframes.
+
+---
+
+## Project Structure
+
+```
+app/
+├── BE/                          # Node.js + Express + MongoDB
+│   ├── .env.example
+│   ├── package.json
+│   └── src/
+│       ├── server.js
+│       ├── db/connect.js
+│       ├── middleware/errorHandler.js
+│       ├── models/
+│       │   ├── AppMapping.js
+│       │   └── Template.js
+│       ├── routes/
+│       │   ├── health.js
+│       │   ├── config.js
+│       │   └── actions.js
+│       └── services/
+│           ├── mappingService.js
+│           ├── templateService.js
+│           └── sanitizeSchema.js
+│
+└── FE/                          # Next.js 14 (App Router) PWA
+    ├── .env.local.example
+    ├── next.config.js
+    ├── package.json
+    ├── public/manifest.json
+    └── src/
+        ├── app/
+        │   ├── layout.js
+        │   └── page.js
+        ├── actions/actionMap.js
+        ├── components/
+        │   ├── ScreenRenderer.js
+        │   ├── ComponentRenderer.js
+        │   └── blocks/
+        │       └── HtmlBlock.js
+        ├── hooks/useConfig.js
+        └── styles/globals.css
+```
+
+---
+
+## Setup
+
+### Backend
+
+```bash
+cd BE
+npm install
+cp .env.example .env
+# Edit .env — set MONGO_URL and APP_ID
+npm run dev
+# Server runs on http://localhost:4000
+```
+
+### Frontend
+
+```bash
+cd FE
+npm install
+cp .env.local.example .env.local
+npm run dev
+# App runs on http://localhost:3000
+```
+
+---
+
+## Environment Variables
+
+### BE `.env`
+```
+PORT=4000
+MONGO_URL=mongodb://localhost:27017/config_db
+APP_ID=600
+CORS_ORIGIN=http://localhost:3000
+```
+
+### FE `.env.local`
+```
+NEXT_PUBLIC_API_URL=http://localhost:4000
+```
+
+---
+
+## API Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/health` | Server + DB status |
+| GET | `/config?appId=600` | Returns sanitized schema for an app |
+| POST | `/action/saveUser` | Logs a user action |
+
+### `/config` Response
+
+```json
+{
+  "appId": 600,
+  "templateId": 200,
+  "safeSchema": {
+    "schemaVersion": 1,
+    "theme": {
+      "primaryColor": "#D4AF37",
+      "backgroundColor": "#0a0a0a",
+      "textColor": "#ffffff"
+    },
+    "body": [
+      { "id": "header",        "type": "html", "html": "<header>...</header>" },
+      { "id": "content-clock", "type": "html", "html": "<main>...</main>"    },
+      { "id": "footer",        "type": "html", "html": "<footer>...</footer>" }
+    ]
+  }
+}
+```
+
+---
+
+## MongoDB Document Format
+
+### `app_mapping` collection
+```json
+{
+  "appId": 600,
+  "templateId": 200,
+  "isActive": true
+}
+```
+
+### `templates` collection
+```json
+{
+  "templateId": 200,
+  "name": "Main Template",
+  "status": "active",
+  "schemaVersion": 1,
+  "template": {
+    "theme": {
+      "primaryColor": "#D4AF37",
+      "backgroundColor": "#0a0a0a",
+      "textColor": "#ffffff"
+    },
+    "blocks": [
+      { "id": "header",        "type": "html", "html": "<header>...</header>" },
+      { "id": "content-clock", "type": "html", "html": "<main>...</main>"    },
+      { "id": "footer",        "type": "html", "html": "<footer>...</footer>" }
+    ]
+  }
+}
+```
+
+---
+
+## How It Works
+
+```
+URL ?appId=600
+     ↓
+useConfig() fetches GET /config?appId=600
+     ↓
+Backend: appId → app_mapping → templateId
+     ↓
+Backend: templateId → templates → rawTemplate
+     ↓
+sanitizeSchema() → safeSchema (only html blocks with id/type/html)
+     ↓
+Frontend: ScreenRenderer splits 100vh into [20% / 60% / 20%]
+     ↓
+Each block → HtmlBlock → <iframe srcDoc> with sandbox="allow-scripts"
+```
+
+---
+
+## Sanitizer Rules (`sanitizeSchema.js`)
+
+Only blocks with all three fields pass through:
+
+| Field | Rule |
+|-------|------|
+| `type` | Must be `"html"` |
+| `id` | Non-empty string |
+| `html` | Non-empty string |
+
+All other fields and block types are dropped.
+
+---
+
+## Layout
+
+Blocks are rendered as iframes, split by viewport height:
+
+| Block index | Default ratio | Description |
+|-------------|--------------|-------------|
+| 0 (header)  | 20%          | Top navigation |
+| 1 (content) | 60%          | Main content area |
+| 2 (footer)  | 20%          | Footer |
+
+Ratios are defined in `ScreenRenderer.js` → `HEIGHT_RATIOS`.
+
+---
+
+## Actions
+
+Buttons inside HTML blocks can trigger backend actions via `postMessage` or direct fetch.
+
+| Action | Description |
+|--------|-------------|
+| `saveUser` | POST `/action/saveUser` with `{ time: Date.now() }` |
+| `openUrl` | Opens a URL in a new tab |
+
+---
+
+## PWA
+
+The frontend is installable as a PWA on mobile devices.  
+- Manifest: `FE/public/manifest.json`  
+- Service worker: auto-generated by `next-pwa` on production build  
+- Install: open in Chrome/Safari on mobile → "Add to Home Screen"
